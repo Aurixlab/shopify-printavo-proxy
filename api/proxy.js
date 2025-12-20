@@ -8,7 +8,7 @@ const fetch = require('node-fetch');
 const PRINTAVO_CONFIG = {
   apiUrl: 'https://www.printavo.com/api/v2',
   email: 'aurixlab@gmail.com',
-  token: 'Sb3OElnenVelaFw8-xGz5A'
+  token: 'Dw9WsBffRzogNyfOCEhswA'
 };
 
 // Allowed origins for security
@@ -42,7 +42,7 @@ module.exports = async (req, res) => {
   }
   
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS, GET');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, email, token');
   res.setHeader('Access-Control-Max-Age', '86400');
   
   // ==========================================
@@ -61,7 +61,12 @@ module.exports = async (req, res) => {
       status: 'ok',
       service: 'Shopify-Printavo Proxy',
       timestamp: new Date().toISOString(),
-      message: 'Proxy is running. Use POST to forward requests.'
+      message: 'Proxy is running. Use POST to forward requests.',
+      credentials: {
+        email: PRINTAVO_CONFIG.email ? '✅ Set' : '❌ Missing',
+        token: PRINTAVO_CONFIG.token ? '✅ Set' : '❌ Missing',
+        apiUrl: PRINTAVO_CONFIG.apiUrl
+      }
     });
   }
   
@@ -108,36 +113,73 @@ module.exports = async (req, res) => {
       });
     }
     
+    // Build headers - try both formats for Printavo API
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      // Lowercase headers (Printavo v2 API format)
+      'email': PRINTAVO_CONFIG.email,
+      'token': PRINTAVO_CONFIG.token,
+      // Also try capitalized format
+      'Email': PRINTAVO_CONFIG.email,
+      'Token': PRINTAVO_CONFIG.token,
+      // And X- prefix format
+      'X-Email': PRINTAVO_CONFIG.email,
+      'X-Token': PRINTAVO_CONFIG.token
+    };
+    
+    console.log('📧 Using credentials:', {
+      email: PRINTAVO_CONFIG.email,
+      token: PRINTAVO_CONFIG.token.substring(0, 10) + '...',
+      url: PRINTAVO_CONFIG.apiUrl
+    });
+    
     // Forward request to Printavo
     const response = await fetch(PRINTAVO_CONFIG.apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'email': PRINTAVO_CONFIG.email,
-        'token': PRINTAVO_CONFIG.token
-      },
+      headers: headers,
       body: JSON.stringify(req.body)
     });
     
     console.log('📨 Printavo response status:', response.status, response.statusText);
+    console.log('📨 Response headers:', JSON.stringify([...response.headers.entries()], null, 2));
     
-    // Check if response is OK
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.log('✗ Printavo API error:', errorText);
-      return res.status(response.status).json({
-        error: 'Printavo API error',
-        status: response.status,
-        message: errorText
+    // Get response text first
+    const responseText = await response.text();
+    console.log('📨 Raw response:', responseText.substring(0, 500));
+    
+    // Try to parse as JSON
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      console.error('❌ Failed to parse response as JSON:', e);
+      return res.status(500).json({
+        error: 'Invalid JSON response from Printavo',
+        response: responseText.substring(0, 1000)
       });
     }
-    
-    // Parse response
-    const data = await response.json();
     
     // Log response details
     if (data.errors) {
       console.log('⚠️ Printavo returned errors:', JSON.stringify(data.errors, null, 2));
+      
+      // Check if it's an auth error
+      const isAuthError = data.errors.some(err => 
+        err.message && (
+          err.message.toLowerCase().includes('unauthorized') ||
+          err.message.toLowerCase().includes('authentication') ||
+          err.extensions?.code === 403 ||
+          err.extensions?.code === 401
+        )
+      );
+      
+      if (isAuthError) {
+        console.log('🔐 AUTHENTICATION FAILED!');
+        console.log('   Email:', PRINTAVO_CONFIG.email);
+        console.log('   Token:', PRINTAVO_CONFIG.token.substring(0, 10) + '...');
+        console.log('   Please verify these credentials in your Printavo account');
+      }
     } else if (data.data) {
       console.log('✅ Success! Data received from Printavo');
       
