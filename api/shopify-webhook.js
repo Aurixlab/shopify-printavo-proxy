@@ -32,14 +32,60 @@ export default async (req,res) => {
   const dueStr = `${(due.getMonth()+1).toString().padStart(2,'0')}/${due.getDate().toString().padStart(2,'0')}/${due.getFullYear()}`;
 
   /* 3a. line-items from cached cart */
-  const lineItems = cartData.items.map((it,idx) => ({
+/* 3a. line-items from cached cart WITH IMAGE URLS */
+const lineItems = cartData.items.map((it,idx) => {
+  const baseItem = {
     name:        it.title,
     style:       it.variant || 'Default',
     quantity:    String(it.qty),
     unit_price:  String((it.price/100).toFixed(2)),
     description: Object.entries(it.properties||{})
+                       .filter(([k,v]) => !k.startsWith('_design_'))  // Don't show URLs in description
                        .map(([k,v])=>`${k}: ${v}`).join('\n') || 'Shopify item'
-  }));
+  };
+  
+  // ✅ Extract image URLs from properties
+  const frontUrl = it.properties?._design_front || '';
+  const backUrl = it.properties?._design_back || '';
+  
+  console.log(`📦 Item ${idx + 1}:`, it.title);
+  if (frontUrl) {
+    console.log(`   🎨 Front design: ${frontUrl}`);
+    baseItem.front_design_url = frontUrl;  // ✅ Add to Printavo payload
+  }
+  if (backUrl) {
+    console.log(`   🎨 Back design: ${backUrl}`);
+    baseItem.back_design_url = backUrl;   // ✅ Add to Printavo payload
+  }
+  
+  return baseItem;
+});
+
+console.log(`✅ Line items prepared: ${lineItems.length} items`);
+```
+
+**Note:** You may need to check Printavo API docs for the correct field names. Common options:
+- `artwork_url`
+- `front_artwork_url` / `back_artwork_url`
+- `design_url`
+- `mockup_url`
+
+---
+
+## 🧪 TESTING
+
+### **Test 1: Upload to ImgBB**
+
+1. Open product page
+2. Customize design
+3. Click "Save Design"
+4. Watch console:
+```
+📤 Uploading image to ImgBB: front-design
+   Image size: 52341 chars
+✅ Image uploaded successfully!
+   URL: https://i.ibb.co/ABC123/front-design.png
+   Size: 15234 bytes
 
   /* 3b. root order fields – now we can fill customer/shipping */
   const orderData = {
