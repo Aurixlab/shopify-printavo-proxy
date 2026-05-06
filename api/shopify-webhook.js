@@ -8,33 +8,45 @@ const PRINTAVO = {
   token: 'Dw9WsBffRzogNyfOCEhswA'
 };
 
-function buildCustomerNotes(order) {
+function buildCustomerNotes(order, cartData) {
   const lines = [`Budget Promotion Shopify Order ${order.name}`];
   lines.push(`Total paid: $${(order.total_price / 100).toFixed(2)}`);
 
-  // Collect _image_details from all line items, deduplicate identical values
+  // Collect _image_details from cached cart items (plain object format)
+  // and fall back to Shopify order line item properties ({name,value} array format)
   const imageDetailsSeen = new Set();
   const imageLines = [];
 
-  (order.line_items || []).forEach(item => {
-    const props = item.properties || [];
-    const detailProp = props.find(p => p.name === '_image_details');
-    if (!detailProp || !detailProp.value || imageDetailsSeen.has(detailProp.value)) return;
-    imageDetailsSeen.add(detailProp.value);
-
-    // Format: "(1) front | 8.50in × 11.00in | 245 DPI, (2) back | 11.50in × 15.00in | 312 DPI"
-    const entries = detailProp.value.split(',').map(s => s.trim()).filter(Boolean);
+  const extractFromValue = (value) => {
+    if (!value || imageDetailsSeen.has(value)) return;
+    imageDetailsSeen.add(value);
+    const entries = value.split(',').map(s => s.trim()).filter(Boolean);
     entries.forEach(entry => {
       const dpiMatch = entry.match(/(\d+)\s*DPI/);
       const dpi = dpiMatch ? parseInt(dpiMatch[1]) : 0;
       const indicator = dpi >= 300 ? '✓' : dpi > 0 ? '⚠' : '';
       imageLines.push(`  ${entry}${indicator ? ' ' + indicator : ''}`);
     });
+  };
+
+  // Primary: read from Redis-cached cart (plain object properties)
+  (cartData?.items || []).forEach(item => {
+    const val = item.properties?._image_details;
+    if (val) extractFromValue(val);
   });
+
+  // Fallback: read from Shopify order line items ({name, value} array)
+  if (imageLines.length === 0) {
+    (order.line_items || []).forEach(item => {
+      const props = Array.isArray(item.properties) ? item.properties : [];
+      const detailProp = props.find(p => p.name === '_image_details');
+      if (detailProp?.value) extractFromValue(detailProp.value);
+    });
+  }
 
   if (imageLines.length > 0) {
     lines.push('');
-    lines.push('🖼 Image Details:');
+    lines.push('Image Details:');
     imageLines.forEach(l => lines.push(l));
   }
 
@@ -136,7 +148,7 @@ export default async (req, res) => {
     country:    order.shipping_address?.country  || order.billing_address?.country  || '',
 
     production_notes: cartData.note || '',
-    notes: buildCustomerNotes(order)
+    notes: buildCustomerNotes(order, cartData)
   };
 
   /* 4. Send to Printavo */
