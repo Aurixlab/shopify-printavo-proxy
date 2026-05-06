@@ -100,13 +100,10 @@ export default async (req, res) => {
         name:       it.title,
         style:      it.variant || 'Default',
         unit_price: String((it.price / 100).toFixed(2)),
-        description: Object.entries(it.properties || {})
-                           .filter(([k]) => !k.startsWith('_design_'))
-                           .map(([k, v]) => `${k}: ${v}`)
-                           .join('\n') || 'Shopify item',
+        props:      it.properties || {},
+        image_details: it.properties?._image_details || orderImageDetails[groupId] || '',
         front_design_url: it.properties?._design_front || '',
         back_design_url:  it.properties?._design_back  || '',
-        image_details: it.properties?._image_details || orderImageDetails[groupId] || '',
         sizes: {},
         totalQty: 0
       };
@@ -118,12 +115,20 @@ export default async (req, res) => {
   });
 
   const lineItems = Object.values(groups).map((g, idx) => {
+    const baseDesc = Object.entries(g.props || {})
+                           .filter(([k]) => !k.startsWith('_design_'))
+                           .map(([k, v]) => `${k}: ${v}`)
+                           .join('\n') || 'Shopify item';
+    const description = g.image_details
+      ? `${baseDesc}\n---\n${g.image_details}`
+      : baseDesc;
+
     const item = {
       name:       g.name,
       style:      g.style,
       quantity:   String(g.totalQty),
       unit_price: g.unit_price,
-      description: g.description
+      description
     };
 
     // Map sizes to Printavo columns (S, M, L, XL, 2XL, 3XL)
@@ -133,7 +138,7 @@ export default async (req, res) => {
 
     if (g.front_design_url) { console.log(`   🎨 Front: ${g.front_design_url}`); item.front_design_url = g.front_design_url; }
     if (g.back_design_url)  { console.log(`   🎨 Back: ${g.back_design_url}`);   item.back_design_url  = g.back_design_url;  }
-    if (g.image_details)    { console.log(`   📐 Image details: ${g.image_details}`); item.notes = g.image_details; }
+    if (g.image_details)    { console.log(`   📐 Image details: ${g.image_details}`); }
 
     console.log(`📦 Line item ${idx + 1}:`, g.name, '| sizes:', g.sizes, '| total:', g.totalQty);
     return item;
