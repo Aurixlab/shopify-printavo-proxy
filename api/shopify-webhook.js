@@ -73,7 +73,7 @@ export default async (req, res) => {
       quantity:   String(it.qty),
       unit_price: String((it.price / 100).toFixed(2)),
       description: Object.entries(it.properties || {})
-                         .filter(([k]) => !k.startsWith('_'))
+                         .filter(([k]) => !k.startsWith('_design_'))
                          .map(([k, v]) => `${k}: ${v}`)
                          .join('\n') || 'Shopify item'
     };
