@@ -65,27 +65,52 @@ export default async (req, res) => {
   due.setDate(due.getDate() + 7);
   const dueStr = `${(due.getMonth() + 1).toString().padStart(2, '0')}/${due.getDate().toString().padStart(2, '0')}/${due.getFullYear()}`;
 
-  /* 3a. Line items from cached cart */
-  const lineItems = cartData.items.map((it, idx) => {
-    const baseItem = {
-      name:       it.title,
-      style:      it.variant || 'Default',
-      quantity:   String(it.qty),
-      unit_price: String((it.price / 100).toFixed(2)),
-      description: Object.entries(it.properties || {})
-                         .filter(([k]) => !k.startsWith('_design_'))
-                         .map(([k, v]) => `${k}: ${v}`)
-                         .join('\n') || 'Shopify item'
+  /* 3a. Line items from cached cart — group by order_group_id so sizes collapse into one row */
+  const SIZE_FIELDS = { 'S': 's', 'M': 'm', 'L': 'l', 'XL': 'xl', '2XL': 'xxl', '3XL': 'xxxl' };
+
+  const groups = {};
+  cartData.items.forEach((it, idx) => {
+    const groupId = it.properties?._order_group_id || `single_${idx}`;
+    if (!groups[groupId]) {
+      groups[groupId] = {
+        name:       it.title,
+        style:      it.variant || 'Default',
+        unit_price: String((it.price / 100).toFixed(2)),
+        description: Object.entries(it.properties || {})
+                           .filter(([k]) => !k.startsWith('_design_'))
+                           .map(([k, v]) => `${k}: ${v}`)
+                           .join('\n') || 'Shopify item',
+        front_design_url: it.properties?._design_front || '',
+        back_design_url:  it.properties?._design_back  || '',
+        sizes: {},
+        totalQty: 0
+      };
+    }
+    const size = (it.properties?._size || '').trim().toUpperCase();
+    const qty  = parseInt(it.qty) || 0;
+    if (size) groups[groupId].sizes[size] = (groups[groupId].sizes[size] || 0) + qty;
+    groups[groupId].totalQty += qty;
+  });
+
+  const lineItems = Object.values(groups).map((g, idx) => {
+    const item = {
+      name:       g.name,
+      style:      g.style,
+      quantity:   String(g.totalQty),
+      unit_price: g.unit_price,
+      description: g.description
     };
 
-    const frontUrl = it.properties?._design_front || '';
-    const backUrl  = it.properties?._design_back  || '';
+    // Map sizes to Printavo columns (S, M, L, XL, 2XL, 3XL)
+    Object.entries(SIZE_FIELDS).forEach(([label, field]) => {
+      item[field] = String(g.sizes[label] || 0);
+    });
 
-    console.log(`📦 Item ${idx + 1}:`, it.title);
-    if (frontUrl) { console.log(`   🎨 Front: ${frontUrl}`); baseItem.front_design_url = frontUrl; }
-    if (backUrl)  { console.log(`   🎨 Back: ${backUrl}`);   baseItem.back_design_url  = backUrl;  }
+    if (g.front_design_url) { console.log(`   🎨 Front: ${g.front_design_url}`); item.front_design_url = g.front_design_url; }
+    if (g.back_design_url)  { console.log(`   🎨 Back: ${g.back_design_url}`);   item.back_design_url  = g.back_design_url;  }
 
-    return baseItem;
+    console.log(`📦 Line item ${idx + 1}:`, g.name, '| sizes:', g.sizes, '| total:', g.totalQty);
+    return item;
   });
 
   console.log(`✅ Line items prepared: ${lineItems.length}`);
