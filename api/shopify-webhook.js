@@ -80,6 +80,18 @@ export default async (req, res) => {
   /* 3a. Line items from cached cart — group by order_group_id so sizes collapse into one row */
   const SIZE_FIELDS = { 'S': 's', 'M': 'm', 'L': 'l', 'XL': 'xl', '2XL': 'xxl', '3XL': 'xxxl' };
 
+  // Build a map of image_details from Shopify order webhook payload (no Redis needed)
+  // order.line_items[].properties is [{name, value}] array format
+  const orderImageDetails = {};
+  (order.line_items || []).forEach(item => {
+    const props = Array.isArray(item.properties) ? item.properties : [];
+    const detailProp = props.find(p => p.name === '_image_details');
+    const groupProp  = props.find(p => p.name === '_order_group_id');
+    if (detailProp?.value && groupProp?.value) {
+      orderImageDetails[groupProp.value] = detailProp.value;
+    }
+  });
+
   const groups = {};
   cartData.items.forEach((it, idx) => {
     const groupId = it.properties?._order_group_id || `single_${idx}`;
@@ -94,6 +106,7 @@ export default async (req, res) => {
                            .join('\n') || 'Shopify item',
         front_design_url: it.properties?._design_front || '',
         back_design_url:  it.properties?._design_back  || '',
+        image_details: it.properties?._image_details || orderImageDetails[groupId] || '',
         sizes: {},
         totalQty: 0
       };
@@ -120,6 +133,7 @@ export default async (req, res) => {
 
     if (g.front_design_url) { console.log(`   🎨 Front: ${g.front_design_url}`); item.front_design_url = g.front_design_url; }
     if (g.back_design_url)  { console.log(`   🎨 Back: ${g.back_design_url}`);   item.back_design_url  = g.back_design_url;  }
+    if (g.image_details)    { console.log(`   📐 Image details: ${g.image_details}`); item.notes = g.image_details; }
 
     console.log(`📦 Line item ${idx + 1}:`, g.name, '| sizes:', g.sizes, '| total:', g.totalQty);
     return item;
