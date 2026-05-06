@@ -7,10 +7,10 @@ const redis = Redis.fromEnv();
 const ALLOW = [
   'https://budgetpromotion.myshopify.com',
   'https://www.budgetpromotion.com',
-  'budgetpromotion.myshopify.com',        // Without https://
-  'www.budgetpromotion.com',              // Without https://
+  'https://budgetpromotion.com',
+  'https://www.budgetpromotion.ca',
+  'https://budgetpromotion.ca',
   'http://localhost:3000',
-  'localhost:3000'                        // For local testing
 ];
 
 function setCors(req, res) {
@@ -19,12 +19,7 @@ function setCors(req, res) {
   console.log('[CORS] Request from:', origin);
   console.log('[CORS] Referer:', req.headers.referer);
   
-  // Check if origin is allowed (more permissive matching)
-  const isAllowed = ALLOW.some(allowed => {
-    const normalizedOrigin = origin.toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
-    const normalizedAllowed = allowed.toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
-    return normalizedOrigin.includes(normalizedAllowed) || normalizedAllowed.includes(normalizedOrigin);
-  });
+  const isAllowed = ALLOW.some(allowed => origin === allowed);
   
   console.log('[CORS] Is allowed?', isAllowed);
   
