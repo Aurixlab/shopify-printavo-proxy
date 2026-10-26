@@ -8,6 +8,7 @@ export default async (req, res) => {
   try {
     const sessionId = req.query.sessionId;
     if (!sessionId) throw new Error('sessionId required');
+    if (typeof sessionId !== 'string' || !/^[\w.\-]{1,128}$/.test(sessionId)) throw new Error('invalid sessionId');
 
     const raw = await redis.get(`session:${sessionId}`);
     if (!raw) return res.status(404).json({ error: 'not found' });

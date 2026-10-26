@@ -77,6 +77,9 @@ export default async (req, res) => {
     if (!cartToken) {
       throw new Error('cartToken required');
     }
+    if (typeof cartToken !== 'string' || !/^[\w.\-]{1,128}$/.test(cartToken)) {
+      throw new Error('invalid cartToken');
+    }
     
     // Store cart data for 30 minutes (1800 seconds)
     await redis.setex(`cart:${cartToken}`, 1800, JSON.stringify(body));

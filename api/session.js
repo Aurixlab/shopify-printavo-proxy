@@ -11,6 +11,10 @@ export default async (req, res) => {
   try {
     const { sessionId, frontDataUrl, backDataUrl } = req.body;
     if (!sessionId) throw new Error('sessionId required');
+    if (typeof sessionId !== 'string' || !/^[\w.\-]{1,128}$/.test(sessionId)) throw new Error('invalid sessionId');
+    for (const v of [frontDataUrl, backDataUrl]) {
+      if (v !== undefined && v !== null && (typeof v !== 'string' || v.length > 4 * 1024 * 1024)) throw new Error('invalid image data');
+    }
 
     await redis.setex(`session:${sessionId}`, 1800, JSON.stringify({ frontDataUrl, backDataUrl }));
     return res.json({ ok: true });

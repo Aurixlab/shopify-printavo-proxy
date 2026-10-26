@@ -4,8 +4,8 @@ const redis = Redis.fromEnv();
 
 const PRINTAVO = {
   url:   'https://www.printavo.com/api/v1/orders',
-  email: 'aurixlab@gmail.com',
-  token: 'Dw9WsBffRzogNyfOCEhswA'
+  email: process.env.PRINTAVO_EMAIL,
+  token: process.env.PRINTAVO_TOKEN
 };
 
 function buildCustomerNotes(order, cartData) {
@@ -56,9 +56,11 @@ function buildCustomerNotes(order, cartData) {
 export default async (req, res) => {
   /* 1. Verify Shopify webhook signature */
   const hmac = req.headers['x-shopify-hmac-sha256'];
+  if (!process.env.SHOPIFY_SECRET || typeof hmac !== 'string') return res.status(401).send('Unauthorized');
   const sig  = crypto.createHmac('sha256', process.env.SHOPIFY_SECRET)
                      .update(req.body, 'utf8').digest('base64');
-  if (hmac !== sig) return res.status(401).send('Unauthorized');
+  const a = Buffer.from(hmac), b = Buffer.from(sig);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return res.status(401).send('Unauthorized');
 
   const order = JSON.parse(req.body);
 

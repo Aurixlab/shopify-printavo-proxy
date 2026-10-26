@@ -1,9 +1,16 @@
 /*  Shopify ➜  Printavo  +  create-invoice endpoint  */
 const PRINTAVO = {
   base: 'https://www.printavo.com/api/v1',
-  email: 'aurixlab@gmail.com',
-  token: 'Dw9WsBffRzogNyfOCEhswA'
+  email: process.env.PRINTAVO_EMAIL,
+  token: process.env.PRINTAVO_TOKEN
 };
+
+/*  Hardening: only these HTTP verbs are forwarded upstream (no DELETE etc.)  */
+const ALLOWED_METHODS = ['GET', 'POST', 'PUT', 'PATCH'];
+/*  Optional allowlist of first path segments, e.g. "orders,customers,orderstatuses".
+    When unset, any well-formed Printavo v1 path is forwarded (legacy behaviour).  */
+const ALLOWED_ENDPOINTS = (process.env.PRINTAVO_ALLOWED_ENDPOINTS || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
 
 const ALLOWED_ORIGINS = [
   'https://budgetpromotion.myshopify.com',
@@ -68,7 +75,7 @@ async function createInvoice(order) {
   }));
 
   const form = buildForm({ ...root, lineItems });
-  const res = await fetch(`${PRINTAVO.base}/orders?email=${PRINTAVO.email}&token=${PRINTAVO.token}`, {
+  const res = await fetch(`${PRINTAVO.base}/orders?email=${encodeURIComponent(PRINTAVO.email)}&token=${encodeURIComponent(PRINTAVO.token)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form
@@ -105,12 +112,22 @@ module.exports = async (req, res) => {
     }
 
     /* ----------  vanilla proxy  ---------- */
+    if (!PRINTAVO.email || !PRINTAVO.token) throw new Error('Server not configured');
+    if (typeof endpoint !== 'string' || !/^[A-Za-z0-9_\-.]+(\/[A-Za-z0-9_\-.]+)*(\?[A-Za-z0-9_\-.=&%\[\]]*)?$/.test(endpoint) || endpoint.split('?')[0].split('/').some(seg => seg === '.' || seg === '..')) {
+      return res.status(400).json({ error: 'Invalid endpoint' });
+    }
+    if (ALLOWED_ENDPOINTS.length && !ALLOWED_ENDPOINTS.includes(endpoint.split('?')[0].split('/')[0])) {
+      return res.status(403).json({ error: 'Endpoint not allowed' });
+    }
+    if (!ALLOWED_METHODS.includes(String(method).toUpperCase())) {
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
     const url = new URL(`${PRINTAVO.base}/${endpoint}`);
     url.searchParams.set('email', PRINTAVO.email);
     url.searchParams.set('token', PRINTAVO.token);
 
-    const opts = { method, headers: { Accept: 'application/json' } };
-    if (data && ['POST', 'PUT', 'PATCH'].includes(method)) {
+    const opts = { method: String(method).toUpperCase(), headers: { Accept: 'application/json' } };
+    if (data && ['POST', 'PUT', 'PATCH'].includes(opts.method)) {
       if (!Array.isArray(data.lineItems)) throw new Error('lineItems must be an array');
       opts.body = buildForm(data);
       opts.headers['Content-Type'] = 'application/x-www-form-urlencoded';
